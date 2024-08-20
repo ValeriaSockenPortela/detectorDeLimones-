@@ -2,20 +2,19 @@ import cv2
 import numpy as np
 from time import sleep
 
-limonFase1Arriba = np.array([56, 172, 85])
-limonFase1Abajo = np.array([34, 149, 64])
+# Valores en RGB para cada fase
 
-limonFase2Arriba = np.array([55, 219, 146])
-limonFase2Abajo = np.array([34, 197, 126])
+limonFase1Arriba = np.array([52, 106, 64])  # Nota: RGB se especifica como [R, G, B]
+limonFase1Abajo = np.array([32, 86, 44])
 
-limonFase3Arriba = np.array([46, 220, 167])
-limonFase3Abajo = np.array([29, 199, 146])
+limonFase2Arriba = np.array([57, 158, 85])
+limonFase2Abajo = np.array([37, 138, 65])
 
-limonFase4Arriba = np.array([40, 206, 193])
-limonFase4Abajo = np.array([20, 185, 173])
+limonFase3Arriba = np.array([228, 255, 233])
+limonFase3Abajo = np.array([208, 241, 213])
 
-limonFase5Arriba = np.array([37, 53, 93])
-limonFase5Abajo = np.array([10, 32, 52])
+limonFase4Arriba = np.array([103, 237, 211])
+limonFase4Abajo = np.array([83, 217, 191])
 
 # Factor de escala: 1 cm = 50 píxeles
 scale_factor = 50.0
@@ -30,7 +29,7 @@ if not cap.isOpened():
 
 # Crear una ventana redimensionable
 cv2.namedWindow('Frame Original', cv2.WINDOW_NORMAL)
-
+sleep(2)
 while True:
     # Captura frame por frame
     ret, frame = cap.read()
@@ -38,15 +37,15 @@ while True:
         print("No se puede recibir frame (el stream se ha terminado?). Saliendo ...")
         break
 
-    # Convertir el frame a escala de grises y a colores HSV
+    # Convertir el frame a escala de grises
     gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    hsv_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-
+    
     # Aplicar un filtro de suavizado para reducir el ruido
-    blurred = cv2.GaussianBlur(gray_frame, (5, 5), 0)
+    blurred = cv2.GaussianBlur(gray_frame, (15, 15), 0)
+    _, binary_frame = cv2.threshold(blurred, 127, 255, cv2.THRESH_BINARY)
 
     # Detección de bordes usando el detector de Canny
-    edges = cv2.Canny(blurred, 50, 150)
+    edges = cv2.Canny(binary_frame, 50, 150)
 
     # Encontrar todos los contornos en la imagen
     contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -61,7 +60,7 @@ while True:
         perimeter_cm = perimeter_pixels / scale_factor
 
         # Dibujar solo si el área es mayor a 20 cm²
-        if area_cm2 > 2.0:
+        if area_cm2 > 0.2:
             # Dibujar el contorno en la imagen original
             cv2.drawContours(frame, [contour], -1, (0, 255, 0), 2)
 
@@ -74,32 +73,29 @@ while True:
             else:
                 cX, cY = 0, 0
 
-            # Imprimir el área y el perímetro en centímetros
-            cv2.putText(frame, f'Area: {area_cm2:.2f} cm^2', (cX, cY - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
-            #cv2.putText(frame, f'Perimeter: {perimeter_cm:.2f} cm', (cX, cY), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
-
             # Crear una máscara del contorno para calcular el color promedio
             mask = np.zeros_like(gray_frame)
             cv2.drawContours(mask, [contour], -1, 255, -1)
-            mean_color = cv2.mean(hsv_frame, mask=mask)[:3]
+            mean_color = cv2.mean(frame, mask=mask)[:3]
             print(mean_color)
-            sleep(1)
-            # Clasificación según el color promedio en el espacio HSV
-            if limonFase1Abajo[0] <= mean_color[0] <= limonFase1Arriba[0] and limonFase1Abajo[1] <= mean_color[1] <= limonFase1Arriba[1] and limonFase1Abajo[2] <= mean_color[2] <= limonFase1Arriba[2]:
-                print("Limon de fase 1")
-            elif limonFase2Abajo[0] <= mean_color[0] <= limonFase2Arriba[0] and limonFase2Abajo[1] <= mean_color[1] <= limonFase2Arriba[1] and limonFase2Abajo[2] <= mean_color[2] <= limonFase2Arriba[2]:
-                print("Limon de fase 2")
-            elif limonFase3Abajo[0] <= mean_color[0] <= limonFase3Arriba[0] and limonFase3Abajo[1] <= mean_color[1] <= limonFase3Arriba[1] and limonFase3Abajo[2] <= mean_color[2] <= limonFase3Arriba[2]:
-                print("Limon de fase 3")
-            elif limonFase4Abajo[0] <= mean_color[0] <= limonFase4Arriba[0] and limonFase4Abajo[1] <= mean_color[1] <= limonFase4Arriba[1] and limonFase4Abajo[2] <= mean_color[2] <= limonFase4Arriba[2]:
-                print("Limon de fase 4")
-            elif limonFase5Abajo[0] <= mean_color[0] <= limonFase5Arriba[0] and limonFase5Abajo[1] <= mean_color[1] <= limonFase5Arriba[1] and limonFase5Abajo[2] <=mean_color[2] <= limonFase1Arriba[2]:
-                print("Limon de fase 5")
+            #cv2.putText(frame, f'Color{mean_color}.', (cX, cY-30), cv2.FONT_HERSHEY_SIMPLEX, 0.1, (0, 0, 255), 1)
+            
+            # Clasificación según el color promedio en el espacio RGB
+            if np.all(limonFase1Abajo <= mean_color) and np.all(mean_color <= limonFase1Arriba):
+                cv2.putText(frame, f'Fase1', (cX, cY), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 1)
+            elif np.all(limonFase2Abajo <= mean_color) and np.all(mean_color <= limonFase2Arriba):
+                cv2.putText(frame, f'Fase2', (cX, cY), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 1)
+            elif np.all(limonFase3Abajo <= mean_color) and np.all(mean_color <= limonFase3Arriba):
+                cv2.putText(frame, f'Fase3', (cX, cY), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 1)
+            elif np.all(limonFase4Abajo <= mean_color) and np.all(mean_color <= limonFase4Arriba):
+                cv2.putText(frame, f'Fase4', (cX, cY), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 1)
             else:
-                print("No coincide")
+                cv2.putText(frame, f'No coincide', (cX, cY), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 1)
 
     # Mostrar el frame original con los contornos
     cv2.imshow('Frame Original', frame)
+    cv2.imshow('Frame en Binario', binary_frame)
+    cv2.imshow('Frame Blanco y Negro', gray_frame)
 
     # Salimos del bucle con la tecla 'a'
     if cv2.waitKey(1) & 0xFF == ord('a'):
