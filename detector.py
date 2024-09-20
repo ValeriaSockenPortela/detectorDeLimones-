@@ -4,8 +4,8 @@ from time import sleep
 
 # Valores en RGB para cada fase
 
-limonFase1Arriba = np.array([27, 98, 70])  
-limonFase1Abajo = np.array([7, 78, 50])
+limonFase1Arriba = np.array([55, 139, 109])
+limonFase1Abajo = np.array([35, 129, 89])
 limonFase2Arriba = np.array([57, 158, 85])
 limonFase2Abajo = np.array([37, 138, 65])
 limonFase3Arriba = np.array([228, 255, 233])
@@ -15,10 +15,11 @@ limonFase4Abajo = np.array([83, 217, 191])
 
 scale_factor = 50.0
 brillo = 0  # Inicialmente 50
-umbralNumero = 37
+umbralNumero = 31
 # Iniciar captura de video
-ip = ''
-cap = cv2.VideoCapture(ip)  
+ip = 'rtsp://admin:Arturit0.@192.168.1.103:554/cam/realmonitor?channel=1&subtype=0'
+cap = cv2.VideoCapture(ip)
+cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  
 if not cap.isOpened():
     print("Error: No se puede abrir la cámara")
     exit()
@@ -61,10 +62,27 @@ while True:
     filtro = cv2.morphologyEx(filtro, cv2.MORPH_OPEN, kernel)
     # Detección de bordes con Canny
     bordes = cv2.Canny(filtro, 150, 200)
-    contornoActual, _ = cv2.findContours(bordes, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
     # Encontrar los contornos
     contornos, _ = cv2.findContours(bordes, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    bounding_boxes = [cv2.boundingRect(contour) for contour in contornos]
+    """for i, contour in enumerate(contornos):
+        x, y, w, h = bounding_boxes[i]
+        area = cv2.contourArea(contour)
+        if area > 20.0:
+            print(area)
+            # Dibujar el contorno actual
+            cv2.drawContours(frame, [contour], -1, (0, 255, 0), 2)
+
+            # Comparar el bounding box actual con otros contornos para verificar si está dentro de otro
+            for j, box in enumerate(bounding_boxes):
+
+                if i != j:
+                    x2, y2, w2, h2 = box
+                    # Verificar si el bounding box actual está completamente contenido en otro
+                    if x > x2 and y > y2 and x + w < x2 + w2 and y + h < y2 + h2:
+                        cv2.drawContours(frame, [contour], -1, (0, 0, 255), 2)
+                        cv2.putText(frame, 'Anidado', (x, y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 1)"""
+
     for contorno in contornos:
         areaPixels = cv2.contourArea(contorno)
         area = areaPixels / (scale_factor ** 2)
@@ -118,6 +136,6 @@ while True:
         print(f'Umbral disminullo: {umbralNumero}')
     elif key == ord('a'):
         break
-
+    
 cap.release()
 cv2.destroyAllWindows()
