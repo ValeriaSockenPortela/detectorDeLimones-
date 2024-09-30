@@ -1,9 +1,8 @@
 import cv2
 import numpy as np
-from time import sleep
+import threading
 
 # Valores en RGB para cada fase
-
 limonFase1Arriba = np.array([55, 139, 109])
 limonFase1Abajo = np.array([35, 129, 89])
 limonFase2Arriba = np.array([57, 158, 85])
@@ -14,21 +13,27 @@ limonFase4Arriba = np.array([103, 237, 211])
 limonFase4Abajo = np.array([83, 217, 191])
 
 scale_factor = 50.0
-brillo = 0  # Inicialmente 50
+brillo = 0
 umbralNumero = 31
-# Iniciar captura de video
-ip = 'rtsp://admin:Arturit0.@192.168.1.103:554/cam/realmonitor?channel=1&subtype=0'
-cap = cv2.VideoCapture(ip)
-cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  
-if not cap.isOpened():
-    print("Error: No se puede abrir la cámara")
+
+# Iniciar captura de video para dos cámaras IP
+ip1 = 'rtsp://192.168.1.10:554/user=admin&password=&channel=1&stream=0.sdp?real_stream'
+ip2 = 'rtsp://192.168.1.11:554/user=admin&password=&channel=1&stream=0.sdp?real_stream'
+
+cap1 = cv2.VideoCapture(ip1)
+cap2 = cv2.VideoCapture(ip2)
+
+if not cap1.isOpened() or not cap2.isOpened():
+    print("Error: No se puede abrir una o ambas cámaras")
     exit()
 
+# Función para ajustar el brillo de un frame
 def ajustarBrillo(hsv_frame, brillo):
     h, s, v = cv2.split(hsv_frame)
     v = cv2.add(v, brillo)
     return cv2.merge([h, s, v])
 
+# Función para detectar la fase según el color
 def detectarFase(mean_color):
     if np.all(limonFase1Abajo <= mean_color) and np.all(mean_color <= limonFase1Arriba):
         return 'Fase 1'
@@ -41,101 +46,69 @@ def detectarFase(mean_color):
     else:
         return 'No coincide'
 
-while True:
-    ret, frame = cap.read()
-    if not ret:
-        print("No se puede recibir frame (el stream se ha terminado?). Saliendo ...")
-        break
+# Función para procesar video de cada cámara
+def procesar_camara(cap, window_name):
+    global brillo, umbralNumero
 
-    # Ajustar el brillo del frame en el espacio HSV
-    hsv_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-    hsv_frame = ajustarBrillo(hsv_frame, brillo)
-    frame = cv2.cvtColor(hsv_frame, cv2.COLOR_HSV2BGR)
-    
-    # Convertir a escala de grises y aplicar umbralización adaptativa
-    gris = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    umbral = cv2.adaptiveThreshold(gris, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, umbralNumero, 2)
-    
-    # Aplicar suavizado Gaussiano y operación morfológica para reducir ruido
-    filtro = cv2.GaussianBlur(umbral, (7, 7), 0)
-    kernel = np.ones((3, 3), np.uint8)
-    filtro = cv2.morphologyEx(filtro, cv2.MORPH_OPEN, kernel)
-    # Detección de bordes con Canny
-    bordes = cv2.Canny(filtro, 150, 200)
-    # Encontrar los contornos
-    contornos, _ = cv2.findContours(bordes, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    bounding_boxes = [cv2.boundingRect(contour) for contour in contornos]
-    """for i, contour in enumerate(contornos):
-        x, y, w, h = bounding_boxes[i]
-        area = cv2.contourArea(contour)
-        if area > 20.0:
-            print(area)
-            # Dibujar el contorno actual
-            cv2.drawContours(frame, [contour], -1, (0, 255, 0), 2)
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            print(f"No se puede recibir frame de la cámara {window_name}. Saliendo...")
+            break
 
-            # Comparar el bounding box actual con otros contornos para verificar si está dentro de otro
-            for j, box in enumerate(bounding_boxes):
+        # Procesamiento del frame
+        hsv_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+        hsv_frame = ajustarBrillo(hsv_frame, brillo)
+        frame = cv2.cvtColor(hsv_frame, cv2.COLOR_HSV2BGR)
 
-                if i != j:
-                    x2, y2, w2, h2 = box
-                    # Verificar si el bounding box actual está completamente contenido en otro
-                    if x > x2 and y > y2 and x + w < x2 + w2 and y + h < y2 + h2:
-                        cv2.drawContours(frame, [contour], -1, (0, 0, 255), 2)
-                        cv2.putText(frame, 'Anidado', (x, y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 1)"""
+        gris = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        umbral = cv2.adaptiveThreshold(gris, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, umbralNumero, 2)
 
-    for contorno in contornos:
-        areaPixels = cv2.contourArea(contorno)
-        area = areaPixels / (scale_factor ** 2)
+        filtro = cv2.GaussianBlur(umbral, (7, 7), 0)
+        filtro = cv2.morphologyEx(filtro, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
+        bordes = cv2.Canny(filtro, 150, 200)
+        contornos, _ = cv2.findContours(bordes, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-        # Filtrar contornos pequeños para mayor estabilidad
-        if area > 2.0:
-            cv2.drawContours(frame, [contorno], -1, (0, 255, 0), 2)
+        for contorno in contornos:
+            areaPixels = cv2.contourArea(contorno)
+            area = areaPixels / (scale_factor ** 2)
 
-            M = cv2.moments(contorno)
-            if M["m00"] != 0:
-                cX = int(M["m10"] / M["m00"])
-                cY = int(M["m01"] / M["m00"])
-            else:
-                cX, cY = 0, 0
+            if area > 2.0:
+                cv2.drawContours(frame, [contorno], -1, (0, 255, 0), 2)
+                M = cv2.moments(contorno)
+                cX, cY = int(M["m10"] / M["m00"]), int(M["m01"] / M["m00"])
+                mask = np.zeros_like(gris)
+                cv2.drawContours(mask, [contorno], -1, 255, -1)
+                color = cv2.mean(frame, mask=mask)[:3]
+                fase = detectarFase(color)
+                cv2.putText(frame, f'{area:.2f} cm', (cX - 30, cY - 30), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 1)
+                cv2.putText(frame, fase, (cX, cY), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 1)
 
-            # Crear máscara y calcular el color promedio del contorno
-            mask = np.zeros_like(gris)
-            cv2.drawContours(mask, [contorno], -1, 255, -1)
-            color = cv2.mean(frame, mask=mask)[:3]
-            print(color)
-            fase = detectarFase(color)
-            
-            # Mostrar resultados en la imagen
-            cv2.putText(frame, f'{area:.2f} cm', (cX - 30, cY - 30), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 1)
-            cv2.putText(frame, fase, (cX, cY), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 1)
-            #if fase == 'No coincide':
-            #    brillo = brillo +1
-    # Mostrar las imágenes procesadas
-    cv2.imshow('Frame Original', frame)
-    cv2.imshow('Frame en Binario', umbral)
-    cv2.imshow('Frame Blanco y Negro', gris)
+        # Mostrar la imagen procesada
+        cv2.imshow(window_name, frame)
 
-    key = cv2.waitKey(1) & 0xFF
-    if key == ord('w'):
-        brillo = min(brillo + 1, 255)
-        print(f'Brillo aumentado a: {brillo}')
-    elif key == ord('s'):
-        brillo = brillo - 1
-        print(f'Brillo reducido a: {brillo}')
-    elif key == ord('e'):
-        brillo = min(brillo + 10, 255)
-        print(f'Brillo aumentado a: {brillo}')
-    elif key == ord('d'):
-        brillo = brillo - 10
-        print(f'Brillo reducido a: {brillo}')
-    elif key == ord('r'):
-        umbralNumero = umbralNumero +2
-        print(f'Umbral aumento: {umbralNumero}')
-    elif key == ord('f'):
-        umbralNumero = max(umbralNumero -2, 3)
-        print(f'Umbral disminullo: {umbralNumero}')
-    elif key == ord('a'):
-        break
-    
-cap.release()
+        key = cv2.waitKey(1) & 0xFF
+        if key == ord('w'):
+            brillo = min(brillo + 1, 255)
+            print(f'Brillo aumentado a: {brillo}')
+        elif key == ord('s'):
+            brillo = brillo - 1
+            print(f'Brillo reducido a: {brillo}')
+        elif key == ord('a'):
+            break
+
+# Crear hilos para cada cámara
+thread1 = threading.Thread(target=procesar_camara, args=(cap1, 'Cámara 1 - Frame Original'))
+thread2 = threading.Thread(target=procesar_camara, args=(cap2, 'Cámara 2 - Frame Original'))
+
+# Iniciar los hilos
+thread1.start()
+thread2.start()
+
+# Esperar a que ambos hilos terminen
+thread1.join()
+thread2.join()
+
+cap1.release()
+cap2.release()
 cv2.destroyAllWindows()
